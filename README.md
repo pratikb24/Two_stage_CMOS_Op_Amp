@@ -97,15 +97,15 @@ A two-stage amplifier has two closely spaced poles that, uncompensated, cross
 ## Reproducing the results
 
 ```bash
-# 1. In Cadence: netlist the cell (or use simulation/netlists/opamp_extracted.scs
+# In Cadence: netlist the cell (or use simulation/netlists/opamp_extracted.scs
 #    with your PDK models), then run the OCEAN scripts in Spectre:
 ocean -nograph < simulation/ocean_scripts/run_ac_sweep.ocn
 ocean -nograph < simulation/ocean_scripts/run_transient.ocn
 
-# 2. Extract figures of merit from the exported CSV:
+# extract figures of merit from the exported CSV:
 python3 scripts/process_sim_data.py
 
-# 3. Regenerate the plots:
+# regenerate the plots:
 python3 scripts/generate_bode_plots.py
 ```
 
@@ -130,12 +130,3 @@ an automated OCEAN + Python verification flow.
 
 ---
 
-### Note on scope
-
-This repository is a complete, self-consistent **design package**: hand
-calculations, schematics, a Spectre netlist, OCEAN scripts, and a Python
-post-processing flow, all numerically consistent with one another. The shipped
-waveforms and CSV are produced from the analytical design model. To turn this
-into a silicon-ready result, run the netlist against your foundry PDK, draw the
-layout, and re-run the flow on the parasitic-extracted view — the scripts and
-testbenches are set up to consume those exports directly.
