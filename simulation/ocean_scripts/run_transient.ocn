@@ -1,0 +1,57 @@
+;; ===========================================================================
+;;  run_transient.ocn
+;;  Large-signal transient of the op-amp wired as a unity-gain buffer, used to
+;;  measure SLEW RATE (rising + falling) and 1% SETTLING TIME.
+;;
+;;  Assumes the buffer testbench (output tied to inverting input) - either edit
+;;  the netlist stimulus to a pulse source or use a dedicated tb_buffer.scs.
+;;
+;;  Run:   ocean -nograph < run_transient.ocn
+;; ===========================================================================
+
+simulator( 'spectre )
+design(    "../netlists/opamp_extracted.scs" )
+resultsDir( "./psf_tran" )
+
+;; ---- 0 -> 1 V step, 10 ns edge, into CL = 10 pF ---------------------------
+desVar( "cl" 10p )
+analysis('tran ?stop "800n" ?errpreset "conservative")
+
+;; pulse stimulus is defined on V_IN in the netlist:
+;;   V_IN (vinp vcm) vsource type=pulse val0=0 val1=1 period=800n
+;;                   rise=0.1n fall=0.1n width=400n
+temp( 27 )
+run()
+
+vout = v("/vout" ?result "tran")
+
+;; ---- slew rate: max dV/dt on the rising edge ------------------------------
+sr_rise = ymax( deriv( clip(vout 5n 60n) ) )        ; V/s over the ramp window
+sr_fall = abs( ymin( deriv( clip(vout 405n 460n) ) ) )
+printf("Slew rate (rising)  = %.3g V/us\n" (sr_rise/1e6))
+printf("Slew rate (falling) = %.3g V/us\n" (sr_fall/1e6))
+
+;; ---- 1% settling time (rising edge) ---------------------------------------
+vfinal = value( vout 380n )
+thi = vfinal*1.01
+tlo = vfinal*0.99
+tsettle = riseTime( vout 0 t vfinal 0.99 1.0 nil nil )   ; approx
+printf("Vout final          = %.4f V\n" vfinal)
+
+;; ---- overshoot ------------------------------------------------------------
+vpk = ymax( clip(vout 0 200n) )
+overshoot = (vpk - vfinal)/vfinal * 100.0
+printf("Overshoot           = %.1f %%\n" overshoot)
+
+;; ---- export transient to CSV ----------------------------------------------
+outCsv = outfile( "../../results/raw_data/step_response_export.csv" "w" )
+fprintf( outCsv "# Cadence Spectre transient export | net: /vout\n" )
+fprintf( outCsv "time_s,vout_V\n" )
+tvec = drGetWaveformXVec( vout )
+n    = drVectorLength( tvec )
+for( i 0 (n-1)
+    tt = drGetElem( tvec i )
+    fprintf( outCsv "%.6e,%.6f\n" tt value(vout tt) )
+)
+close( outCsv )
+printf("Wrote ../../results/raw_data/step_response_export.csv (%d rows)\n" n)

@@ -1,0 +1,83 @@
+;; ===========================================================================
+;;  run_ac_sweep.ocn
+;;  Automated open-loop AC characterisation of the two-stage Miller op-amp.
+;;  Extracts DC gain, unity-gain bandwidth (GBW), phase margin (PM) and gain
+;;  margin (GM), then exports the full sweep to CSV for the Python plotters.
+;;
+;;  Run from Cadence:   ocean -nograph < run_ac_sweep.ocn
+;;                or in the CIW:  load("run_ac_sweep.ocn")
+;; ===========================================================================
+
+;; ---- point these at your environment -------------------------------------
+simulator( 'spectre )
+design(    "../netlists/opamp_extracted.scs" )
+resultsDir( "./psf" )
+
+;; ---- analyses -------------------------------------------------------------
+analysis('ac  ?start "1" ?stop "1G" ?dec "20")
+analysis('dc  ?saveOppoint t)
+
+;; ---- design variables (kept in sync with the netlist / hand calcs) --------
+desVar( "ccval"  3p )
+desVar( "rzval"  3.1k )
+desVar( "cl"     10p )
+
+envOption('analysisOrder list("dc" "ac"))
+temp( 27 )
+
+run()
+
+;; ===========================================================================
+;;  Post-processing
+;; ===========================================================================
+vout = v("/vout" ?result "ac")
+
+gainDb = dB20( vout )
+phase  = phaseDegUnwrapped( vout )
+
+;; --- DC gain (low-frequency asymptote) ---
+dcGain = value( gainDb 1 )                       ; at 1 Hz
+printf("DC open-loop gain      = %.2f dB\n" dcGain)
+
+;; --- unity-gain frequency (GBW): 0 dB crossing ---
+gbw = cross( gainDb 0 1 "falling" )
+printf("Unity-gain BW (GBW)    = %.4g Hz\n" gbw)
+
+;; --- phase margin ---
+phAtGbw = value( phase gbw )
+pm = 180.0 + phAtGbw
+printf("Phase margin           = %.2f deg\n" pm)
+
+;; --- gain margin (gain where phase = -180) ---
+f180 = cross( phase -180 1 "falling" )
+gm   = -1 * value( gainDb f180 )
+printf("Gain margin            = %.2f dB\n" gm)
+
+;; --- dominant-pole (-3 dB) frequency ---
+f3db = cross( gainDb (dcGain - 3) 1 "falling" )
+printf("-3 dB (dominant pole)  = %.4g Hz\n" f3db)
+
+;; ===========================================================================
+;;  Export the raw sweep to CSV  ->  results/raw_data/ac_sweep_export.csv
+;;  Columns: freq_Hz, gain_dB, phase_deg   (matches process_sim_data.py)
+;; ===========================================================================
+outCsv = outfile( "../../results/raw_data/ac_sweep_export.csv" "w" )
+fprintf( outCsv "# Cadence Spectre AC sweep export | net: /vout | analysis: ac\n" )
+fprintf( outCsv "freq_Hz,gain_dB,phase_deg\n" )
+
+fvec = drGetWaveformXVec( gainDb )
+n    = drVectorLength( fvec )
+for( i 0 (n-1)
+    f  = drGetElem( fvec i )
+    g  = value( gainDb f )
+    p  = value( phase  f )
+    fprintf( outCsv "%.6e,%.5f,%.5f\n" f g p )
+)
+close( outCsv )
+printf("Wrote ../../results/raw_data/ac_sweep_export.csv (%d rows)\n" n)
+
+;; ---- write a one-line pass/fail summary -----------------------------------
+sumf = outfile( "./ac_summary.txt" "w" )
+fprintf( sumf "Av0=%.2fdB  GBW=%.3gHz  PM=%.1fdeg  GM=%.1fdB\n" dcGain gbw pm gm )
+fprintf( sumf "spec: Av0>=60dB  GBW~10MHz  PM>=60deg\n" )
+close( sumf )

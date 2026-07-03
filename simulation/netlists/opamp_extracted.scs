@@ -1,0 +1,99 @@
+// ============================================================================
+//  Two-Stage CMOS Operational Amplifier with Miller Compensation
+//  Spectre netlist  -  generic 180 nm CMOS,  VDD = 1.8 V
+// ----------------------------------------------------------------------------
+//  Topology : PMOS differential pair (M1/M2) + NMOS current-mirror load
+//             (M3/M4) driven by a PMOS tail source (M5); second stage is an
+//             NMOS common-source driver (M6) with a PMOS current-source load
+//             (M7). Miller compensation = Cc in series with nulling resistor Rz
+//             between vo1 (M6 gate) and vout (M6 drain).
+//
+//  NOTE: this is the SCHEMATIC-level netlist. After layout, replace the device
+//        lines with your parasitic-extracted subckt (calibre/PEX .scs) and keep
+//        the same port order - the testbenches below will still drive it.
+//        Swap the generic model 'include' for your PDK model file.
+// ============================================================================
+simulator lang=spectre
+global 0
+
+// ---------------------------------------------------------------------------
+// Device models
+//   For a real run, replace this include with your PDK, e.g.:
+//     include "$PDK_DIR/models/spectre/tt.scs" section=tt
+//   The generic Level-1-ish MOS models below let the netlist elaborate stand-
+//   alone so reviewers can read it without a proprietary PDK.
+// ---------------------------------------------------------------------------
+include "./models_generic_180n.scs"
+
+// ===========================================================================
+//  Op-amp core as a reusable subcircuit
+//  Ports:  vinp vinn vout vdd vss vbias
+// ===========================================================================
+subckt opamp_core (vinp vinn vout vdd vss vbias)
+    parameters wp=8.5u lp=0.5u \
+               w1=8.5u w3=1.5u w5=5u w6=13u w7=22u \
+               L=0.5u ccval=3p rzval=3.1k
+
+    // ---- Tail current source (PMOS) ----
+    M5 (tail vbias vdd vdd) pmos_18  w=w5 l=L  m=1
+
+    // ---- Input differential pair (PMOS) ----
+    M1 (n1  vinp tail vdd) pmos_18  w=w1 l=L  m=1
+    M2 (vo1 vinn tail vdd) pmos_18  w=w1 l=L  m=1
+
+    // ---- NMOS current-mirror load ----
+    M3 (n1  n1  vss vss)  nmos_18   w=w3 l=L  m=1     // diode-connected
+    M4 (vo1 n1  vss vss)  nmos_18   w=w3 l=L  m=1     // mirror output
+
+    // ---- Second stage: NMOS common-source driver ----
+    M6 (vout vo1 vss vss) nmos_18   w=w6 l=L  m=1
+
+    // ---- Second stage: PMOS current-source load ----
+    M7 (vout vbias vdd vdd) pmos_18 w=w7 l=L  m=1
+
+    // ---- Miller compensation network (Cc in series with Rz) ----
+    Rz (vo1 nz)   resistor r=rzval
+    Cc (nz  vout) capacitor c=ccval
+ends opamp_core
+
+// ===========================================================================
+//  Bias network: R_set + NMOS diode/mirror + PMOS diode -> vbias
+// ===========================================================================
+subckt bias_gen (vbias vdd vss)
+    parameters rset=90k L=0.5u
+    Rset (vdd nd)   resistor r=rset
+    M9   (nd  nd  vss vss)  nmos_18  w=4u  l=L         // diode, sets Iref
+    M10  (nb  nd  vss vss)  nmos_18  w=4u  l=L         // mirror
+    M8   (nb  vbias vdd vdd) pmos_18 w=5u  l=L         // PMOS diode
+    // tie M8 gate<->drain to form vbias
+    Rtie (nb vbias) resistor r=1m
+ends bias_gen
+
+// ===========================================================================
+//  TOP-LEVEL TESTBENCH  (default: open-loop AC)
+//  Comment / uncomment the stimulus + analysis block you need, or drive the
+//  cell from the OCEAN scripts in ../ocean_scripts/.
+// ===========================================================================
+V_DD   (vdd 0)  vsource dc=1.8 type=dc
+V_CM   (vcm 0)  vsource dc=0.9 type=dc
+
+// differential AC stimulus (open loop): +in gets ac=1, -in held at Vcm
+V_IN   (vinp vcm) vsource dc=0 mag=1 type=dc
+E_dummy (vinn 0) vsource dc=0.9 type=dc
+
+X_BIAS (vbias vdd 0) bias_gen
+X_OA   (vinp vinn vout vdd 0 vbias) opamp_core
+
+C_L    (vout 0) capacitor c=10p
+
+// ---- analyses ----
+dcOp    dc
+acSweep ac start=1 stop=1G dec=20
+
+// ---- save & measure ----
+save vout vo1 vbias
+// (gain / GBW / PM are extracted by scripts/process_sim_data.py from the export)
+
+// ---- options ----
+simulatorOptions options reltol=1e-4 vabstol=1e-7 iabstol=1e-11 \
+                 temp=27 tnom=27 gmin=1e-13

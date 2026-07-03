@@ -1,0 +1,32 @@
+// ============================================================================
+//  models_generic_180n.scs
+//  Generic, PDK-free 180 nm MOS models for READABILITY / stand-alone elaboration
+//  ONLY. These are first-order models tuned to the hand-calc constants
+//  (KPn ~= 270 uA/V^2, KPp ~= 70 uA/V^2, |Vth| ~= 0.45 V, lambda ~= 0.08 /V).
+//
+//  >>> For any real characterization, DELETE this file and 'include' your
+//  >>> foundry PDK model section instead (tt / ss / ff corners).
+// ============================================================================
+simulator lang=spectre
+
+model nmos_18 bsim3v3 type=n \
+    version=3.24 \
+    vth0=0.45 tox=4.1e-9 \
+    u0=270 \
+    lambda=0.08 \
+    lint=1e-8 wint=1e-8 \
+    cgso=1.2e-10 cgdo=1.2e-10 cj=1.0e-3 cjsw=2.0e-10
+
+model pmos_18 bsim3v3 type=p \
+    version=3.24 \
+    vth0=-0.45 tox=4.1e-9 \
+    u0=70 \
+    lambda=0.08 \
+    lint=1e-8 wint=1e-8 \
+    cgso=1.2e-10 cgdo=1.2e-10 cj=1.1e-3 cjsw=2.2e-10
+
+// If your Spectre install rejects the simplified BSIM3 card above, the mos1
+// fallback below reproduces the same first-order behaviour:
+//
+// model nmos_18 mos1 type=n vto=0.45  kp=270u lambda=0.08 gamma=0.4 phi=0.8
+// model pmos_18 mos1 type=p vto=-0.45 kp=70u  lambda=0.08 gamma=0.5 phi=0.8
